@@ -1,20 +1,13 @@
-#!/usr/bin/env python3
 """
-Clip.Cafe batch scraper–downloader
-----------------------------------
-$ pip install selenium webdriver-manager beautifulsoup4 pandas
+Libaries: selenium webdriver-manager beautifulsoup4 pandas
 
-USAGE EXAMPLES
+USAGE 
 • One URL:
       python script.py "https://clip.cafe/the-wolf-of-wall-street-2013/the-qualude/"
 • Many URLs:
       python script.py <url1> <url2> <url3>
 • Text file (one URL per line):
       python script.py links.txt
-
-Outputs
-• data.csv         – grows with every clip
-• Lines/NN.wav     – WAVs named after their id (01.wav, 02.wav…)
 """
 
 import os, re, sys, csv, time, pickle, tempfile, shutil, pathlib
@@ -27,14 +20,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-# ─── paths & settings ───────────────────────────────────────────
 CSV_PATH        = "data.csv"
 DL_DIR          = pathlib.Path("Lines")
 COOKIES_FILE    = "clipcafe_cookies.pkl"
-WAIT_SECS       = 15          # generic Selenium wait
-LOGIN_WAIT_SECS = 60          # first-run login grace period
+WAIT_SECS       = 15 
+LOGIN_WAIT_SECS = 60 
 
-# ─── browser helpers ───────────────────────────────────────────
 def start_browser():
     opts = webdriver.ChromeOptions()
     opts.add_argument("--start-maximized")
@@ -61,7 +52,6 @@ def save_cookies(driver):
     with open(COOKIES_FILE, "wb") as fh:
         pickle.dump(driver.get_cookies(), fh)
 
-# ─── CSV helpers ────────────────────────────────────────────────
 def next_id() -> int:
     if not os.path.exists(CSV_PATH):
         return 1
@@ -76,7 +66,6 @@ def append_csv(row: dict):
             w.writeheader()
         w.writerow(row)
 
-# ─── scraping helpers ──────────────────────────────────────────
 def extract_meta(html: str):
     """
     Return (actor, movie, cleaned_line, duration), handling pages that
@@ -114,7 +103,6 @@ def wait_download(tmp_dir: pathlib.Path, before):
         time.sleep(1)
     raise RuntimeError("Download timed out")
 
-# ─── process one clip (driver already running) ─────────────────
 def handle_clip(drv, url):
     drv.get(url)
     WebDriverWait(drv, WAIT_SECS).until(
@@ -122,7 +110,6 @@ def handle_clip(drv, url):
 
     actor, movie, line, dur = extract_meta(drv.page_source)
 
-    # ── click “Download Clip” safely (ad overlay proof) ─────────
     drv.execute_script("document.querySelectorAll('.fixedBanner').forEach(el=>el.remove())")
     btn = WebDriverWait(drv, WAIT_SECS).until(
         EC.element_to_be_clickable((By.CSS_SELECTOR, "button[aria-label='Download Clip']")))
@@ -145,37 +132,34 @@ def handle_clip(drv, url):
                 "Line": line, "Duration": dur})
     print(f"✔ {idx:02d}  {actor} — “{movie}”")
 
-# ─── run a batch of links ──────────────────────────────────────
 def run_batch(urls):
     drv = start_browser()
     try:
         if not restore_cookies(drv):
-            print(f"🔑 First run – log in within {LOGIN_WAIT_SECS}s …")
+            print(f"First run – log in within {LOGIN_WAIT_SECS}s …")
             drv.get("https://clip.cafe")
             for s in range(LOGIN_WAIT_SECS, 0, -1):
                 print(f"\r   {s:02d}s left", end="", flush=True)
                 time.sleep(1)
-            print("\n💾 Cookies saved.")
+            print("\n Cookies saved.")
             save_cookies(drv)
 
         for u in urls:
             try:
                 handle_clip(drv, u)
             except Exception as e:
-                print(f"⚠️  {u}  ({e})")
+                print(f"error: {u}  ({e})")
 
     finally:
         drv.quit()
         shutil.rmtree(drv.tmp_download_dir, ignore_errors=True)
 
-# ─── utilities ─────────────────────────────────────────────────
 def collect_urls(args):
-    if len(args) == 1 and os.path.isfile(args[0]):         # links.txt style
+    if len(args) == 1 and os.path.isfile(args[0]):
         with open(args[0], encoding="utf-8") as fh:
             return [ln.strip() for ln in fh if ln.strip()]
     return args
 
-# ─── main ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage:\n  python script.py <URL …>\n  python script.py links.txt")
