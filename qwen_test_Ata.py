@@ -1,16 +1,3 @@
-#!/usr/bin/env python3
-"""
-identify_speakers_qwen.py
--------------------------
-Scan every .wav under a directory, ask Qwen-2-Audio-7B-Instruct
-‘Can you figure out who this speaker is?’ and write incremental
-results to JSON so progress survives crashes or OOMs.
-
-Tested on macOS 14 / Apple-silicon (M3) with:
-  • Python 3.12
-  • PyTorch 2.3 + mps backend
-  • transformers >= 4.54
-"""
 
 from __future__ import annotations
 
@@ -23,23 +10,22 @@ import librosa
 import torch
 from transformers import AutoProcessor, Qwen2AudioForConditionalGeneration
 
-# ─────────────── configuration ─────────────── #
 DEFAULT_MODEL = "Qwen/Qwen2-Audio-7B-Instruct"
 DEFAULT_INPUT_DIR = Path("/Users/atacinargenc/Desktop/github/movieDataset/Lines")
 DEFAULT_OUTPUT_FILE = Path("qwen_test.json")
 
-# Work out the best device: Apple-silicon GPU if available, else CPU
-DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+if torch.cuda.is_available():
+    DEVICE = "cuda"  
+elif torch.backends.mps.is_available():
+    DEVICE = "mps" 
+else:
+    DEVICE = "cpu"
 
-
-# ─────────────── helpers ─────────────── #
 def load_model(model_name: str = DEFAULT_MODEL):
-    print(f"🔄 Loading {model_name} on {DEVICE.upper()} …")
+    print(f"Loading {model_name} on {DEVICE.upper()} …")
 
-    # Processor (tokeniser + feature extractor)
     processor = AutoProcessor.from_pretrained(model_name)
 
-    # Model – float16 on M-series, full-precision elsewhere
     dtype = torch.float16 if DEVICE == "mps" else None
     model = Qwen2AudioForConditionalGeneration.from_pretrained(
         model_name,
@@ -52,11 +38,9 @@ def load_model(model_name: str = DEFAULT_MODEL):
 
 def analyse_clip(wav_path: Path, processor, model) -> str:
     """Run a single WAV through the model and return its answer."""
-    # Load audio at the model’s expected sample rate
     target_sr = processor.feature_extractor.sampling_rate
     audio, _ = librosa.load(wav_path, sr=target_sr, mono=True)
 
-    # Limit each clip to 30 s to keep memory in check
     max_len = 30 * target_sr
     audio = audio[:max_len]
 
@@ -77,7 +61,6 @@ def analyse_clip(wav_path: Path, processor, model) -> str:
     )
     print(f"   🔍 Generated prompt length: {len(text_prompt)} characters")
 
-    # NEW: use the *singular* kwarg `audio=` (tuple of (array, sample_rate))
     inputs = processor(
         text=text_prompt,
         audio=[audio],
@@ -93,18 +76,17 @@ def analyse_clip(wav_path: Path, processor, model) -> str:
     with torch.no_grad():
         generated = model.generate(
             **inputs,
-            max_new_tokens=8,
+            max_new_tokens=128,
             do_sample=True,
             temperature=0.7,
         )
 
-    # Strip the prompt so we keep only the answer
     generated = generated[:, input_len:]
     response = processor.batch_decode(
         generated, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )[0].strip()
 
-    print(f"   ✅ Generated: '{response[:100]}{'…' if len(response) > 100 else ''}'")
+    print(f"   Generated: '{response[:100]}{'…' if len(response) > 100 else ''}'")
     return response or "No response generated"
 
 
@@ -117,14 +99,13 @@ def traverse_and_analyse(
     """Walk the directory tree, run every WAV, and dump incremental JSON."""
     results: Dict[str, str] = {}
 
-    # Resume from previous run if possible
     if out_path.exists():
         try:
             with out_path.open() as f:
                 results = json.load(f)
-            print(f"📂 Loaded {len(results)} existing results from {out_path}")
+            print(f" Loaded {len(results)} existing results from {out_path}")
         except Exception as e:
-            print(f"⚠️  Could not read existing results: {e}")
+            print(f"Could not read existing results: {e}")
 
     wav_paths = sorted(root_dir.rglob("*.wav"))
     print(f"🔍 Found {len(wav_paths)} .wav files under {root_dir}")
@@ -140,7 +121,7 @@ def traverse_and_analyse(
         try:
             guess = analyse_clip(wav_path, processor, model)
         except Exception as exc:
-            print(f"⚠️  Error on '{rel_path}': {exc}")
+            print(f" Error on '{rel_path}': {exc}")
             guess = f"ERROR: {exc}"
 
         results[rel_path] = guess
@@ -174,7 +155,7 @@ def main():
         processor,
         model,
     )
-    print(f"\n✅  All done. Results saved to {args.output_file}")
+    print(f"\n  All done. Results saved to {args.output_file}")
 
 
 if __name__ == "__main__":
