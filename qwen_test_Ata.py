@@ -11,7 +11,7 @@ import torch
 from transformers import AutoProcessor, Qwen2AudioForConditionalGeneration
 
 DEFAULT_MODEL = "Qwen/Qwen2-Audio-7B-Instruct"
-DEFAULT_INPUT_DIR = Path("/Users/atacinargenc/Desktop/github/movieDataset/Lines")
+DEFAULT_INPUT_DIR = Path("/Lines")
 DEFAULT_OUTPUT_FILE = Path("qwen_test.json")
 
 if torch.cuda.is_available():
